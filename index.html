@@ -104,4 +104,309 @@ footer { text-align:center; color:var(--muted); font-size:12px; padding-top:12px
   </div>
 </section>
 
-<nav class="tabs" 
+<nav class="tabs" aria-label="功能导航">
+  <button class="tab active" data-view="tasks">✅ 任务</button>
+  <button class="tab" data-view="logs">📝 学习日志</button>
+  <button class="tab" data-view="goals">🎯 学习目标</button>
+  <button class="tab" data-view="backup">💾 数据管理</button>
+</nav>
+
+<section class="view active" id="tasks">
+  <div class="card">
+    <h2>今日任务</h2>
+    <form id="taskForm" class="row wrap">
+      <input id="taskInput" maxlength="160" placeholder="添加一个小目标，例如：学习 20 分钟" required>
+      <button class="btn" type="submit">＋ 添加任务</button>
+    </form>
+    <div class="row" style="margin-top:12px">
+      <select id="taskFilter" aria-label="任务筛选">
+        <option value="all">全部任务</option>
+        <option value="open">未完成</option>
+        <option value="done">已完成</option>
+      </select>
+      <button class="btn ghost" id="clearDone" type="button">清除已完成</button>
+    </div>
+    <div class="task-list" id="taskList"></div>
+  </div>
+  <div class="card">
+    <h2>学习小提醒</h2>
+    <p>不要急着完成所有事情。每天推进一小步，长期积累也会成为成果。</p>
+    <p class="muted">提示：这里的任务暂时只保存在当前浏览器，不会自动同步到 GitHub 的 todo.md。</p>
+  </div>
+</section>
+
+<section class="view" id="logs">
+  <div class="card">
+    <h2>记录今天的学习</h2>
+    <form id="logForm" class="stack">
+      <div>
+        <label for="logDate" class="muted">日期</label>
+        <input id="logDate" type="date" required>
+      </div>
+      <div>
+        <label for="logLearned" class="muted">今天学了什么？</label>
+        <textarea id="logLearned" maxlength="4000" placeholder="记录今天学到的新知识……"></textarea>
+      </div>
+      <div>
+        <label for="logMade" class="muted">今天做出了什么？</label>
+        <textarea id="logMade" maxlength="4000" placeholder="完成了哪些练习或作品？"></textarea>
+      </div>
+      <div>
+        <label for="logNext" class="muted">明天准备做什么？</label>
+        <textarea id="logNext" maxlength="2000" placeholder="写下下一步计划……"></textarea>
+      </div>
+      <button class="btn" type="submit">保存学习日志</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2 style="margin:0">历史日志</h2><span class="muted" id="logCount"></span></div>
+    <div class="item-list" id="logList"></div>
+  </div>
+</section>
+
+<section class="view" id="goals">
+  <div class="card">
+    <h2>我的学习目标</h2>
+    <form id="goalForm" class="stack">
+      <input id="goalInput" maxlength="160" placeholder="例如：完成一个剪辑练习作品" required>
+      <button class="btn" type="submit">＋ 添加目标</button>
+    </form>
+    <div class="item-list" id="goalList"></div>
+  </div>
+</section>
+
+<section class="view" id="backup">
+  <div class="card">
+    <h2>数据备份与恢复</h2>
+    <p>数据保存在当前浏览器。建议定期导出备份，避免清理浏览器数据时丢失记录。</p>
+    <div class="stack">
+      <button class="btn" id="backupDownload" type="button">下载 JSON 备份</button>
+      <label class="btn secondary" for="importFile" style="text-align:center">从 JSON 文件恢复</label>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
+      <button class="btn danger" id="resetBtn" type="button">清空本机全部数据</button>
+    </div>
+    <p class="notice">注意：恢复备份会替换当前 APP 数据。清空操作不可撤销，请先备份。数据不会上传到服务器。</p>
+  </div>
+</section>
+
+<footer>My Learning · 从今天开始，积累每一点进步。</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const KEY = "my-learning-app-v1";
+  const $ = id => document.getElementById(id);
+  const today = new Date();
+  const localDate = d => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const day = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${day}`;
+  };
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  let state = { tasks:[], logs:[], goals:[] };
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+      render();
+    } catch (e) {
+      alert("保存失败。可能是浏览器存储空间不足，请先导出备份。");
+    }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        state = {
+          tasks:Array.isArray(data.tasks)?data.tasks:[],
+          logs:Array.isArray(data.logs)?data.logs:[],
+          goals:Array.isArray(data.goals)?data.goals:[]
+        };
+      }
+    } catch (e) {
+      alert("读取本地数据失败。请尝试导入以前下载的 JSON 备份。");
+    }
+  }
+  function safe(text) {
+    return String(text ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+  function empty(msg) { return `<div class="empty">${safe(msg)}</div>`; }
+
+  function render() {
+    const total = state.tasks.length;
+    const done = state.tasks.filter(t=>t.done).length;
+    const rate = total ? Math.round(done/total*100) : 0;
+    $("totalStat").textContent = total;
+    $("doneStat").textContent = done;
+    $("rateStat").textContent = rate + "%";
+    $("progressBar").style.width = rate + "%";
+    $("remainingStat").textContent = `还剩 ${total-done} 项任务`;
+
+    const filter = $("taskFilter").value;
+    const tasks = state.tasks.filter(t =>
+      filter==="all" || (filter==="done" ? t.done : !t.done)
+    );
+    $("taskList").innerHTML = tasks.length ? tasks.map(t => `
+      <div class="task ${t.done?"done":""}">
+        <input type="checkbox" data-toggle="${safe(t.id)}" ${t.done?"checked":""} aria-label="完成任务">
+        <div class="task-title">${safe(t.title)}<small>${safe(t.created||"")}</small></div>
+        <button type="button" data-delete-task="${safe(t.id)}" aria-label="删除任务">删除</button>
+      </div>`).join("") : empty("这里还没有任务，添加一项试试吧。");
+
+    const logs = [...state.logs].sort((a,b)=>b.date.localeCompare(a.date));
+    $("logCount").textContent = `${logs.length} 条`;
+    $("logList").innerHTML = logs.length ? logs.map(l=>`
+      <article class="item">
+        <div class="item-top"><strong>${safe(l.date)}</strong>
+          <button type="button" data-delete-log="${safe(l.id)}">删除</button></div>
+        ${l.learned?`<p><b>学到了什么：</b>\n${safe(l.learned)}</p>`:""}
+        ${l.made?`<p><b>完成了什么：</b>\n${safe(l.made)}</p>`:""}
+        ${l.next?`<p><b>下一步：</b>\n${safe(l.next)}</p>`:""}
+      </article>`).join("") : empty("还没有学习日志，记录今天的第一份收获吧。");
+
+    $("goalList").innerHTML = state.goals.length ? state.goals.map(g=>`
+      <div class="task ${g.done?"done":""}">
+        <input type="checkbox" data-toggle-goal="${safe(g.id)}" ${g.done?"checked":""} aria-label="完成目标">
+        <div class="task-title">${safe(g.title)}</div>
+        <button type="button" data-delete-goal="${safe(g.id)}">删除</button>
+      </div>`).join("") : empty("添加一个你想实现的学习目标。");
+  }
+
+  document.querySelectorAll(".tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===btn));
+      document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===btn.dataset.view));
+    });
+  });
+
+  $("taskForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const title = $("taskInput").value.trim();
+    if (!title) return;
+    state.tasks.unshift({id:newId(),title,done:false,created:localDate(new Date())});
+    $("taskInput").value = "";
+    save();
+  });
+  $("taskFilter").addEventListener("change", render);
+  $("clearDone").addEventListener("click", () => {
+    const count = state.tasks.filter(t=>t.done).length;
+    if (count && confirm(`确定清除 ${count} 项已完成任务吗？`)) {
+      state.tasks = state.tasks.filter(t=>!t.done); save();
+    }
+  });
+  $("taskList").addEventListener("change", e => {
+    const id = e.target.dataset.toggle;
+    if (!id) return;
+    const t = state.tasks.find(x=>x.id===id);
+    if (t) { t.done=e.target.checked; save(); }
+  });
+  $("taskList").addEventListener("click", e => {
+    const id = e.target.dataset.deleteTask;
+    if (id && confirm("确定删除这项任务吗？")) {
+      state.tasks=state.tasks.filter(t=>t.id!==id); save();
+    }
+  });
+
+  $("logDate").value = localDate(today);
+  $("logForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const date = $("logDate").value;
+    const log = {
+      id:newId(), date,
+      learned:$("logLearned").value.trim(),
+      made:$("logMade").value.trim(),
+      next:$("logNext").value.trim()
+    };
+    if (!log.learned && !log.made && !log.next) {
+      alert("请至少填写一项学习内容。"); return;
+    }
+    const existing = state.logs.findIndex(l=>l.date===date);
+    if (existing>=0) {
+      if (!confirm("这一天已有日志，确定用新内容替换吗？")) return;
+      state.logs[existing]=log;
+    } else state.logs.push(log);
+    $("logLearned").value="";
+    $("logMade").value="";
+    $("logNext").value="";
+    save();
+    alert("学习日志已保存。");
+  });
+  $("logList").addEventListener("click", e => {
+    const id = e.target.dataset.deleteLog;
+    if (id && confirm("确定删除这篇学习日志吗？")) {
+      state.logs=state.logs.filter(l=>l.id!==id); save();
+    }
+  });
+
+  $("goalForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const title=$("goalInput").value.trim();
+    if (!title) return;
+    state.goals.push({id:newId(),title,done:false});
+    $("goalInput").value=""; save();
+  });
+  $("goalList").addEventListener("change", e => {
+    const id=e.target.dataset.toggleGoal;
+    if (!id) return;
+    const g=state.goals.find(x=>x.id===id);
+    if (g) { g.done=e.target.checked; save(); }
+  });
+  $("goalList").addEventListener("click", e => {
+    const id=e.target.dataset.deleteGoal;
+    if (id && confirm("确定删除这个目标吗？")) {
+      state.goals=state.goals.filter(g=>g.id!==id); save();
+    }
+  });
+
+  function downloadBackup() {
+    const blob = new Blob([JSON.stringify({
+      app:"My Learning",version:1,exportedAt:new Date().toISOString(),data:state
+    },null,2)], {type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`my-learning-backup-${localDate(new Date())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  $("exportBtn").addEventListener("click", downloadBackup);
+  $("backupDownload").addEventListener("click", downloadBackup);
+  $("importFile").addEventListener("change", async e => {
+    const file=e.target.files[0];
+    if (!file) return;
+    try {
+      const data=JSON.parse(await file.text());
+      const imported=data.data || data;
+      if (!Array.isArray(imported.tasks) || !Array.isArray(imported.logs) || !Array.isArray(imported.goals)) {
+        throw new Error("格式不正确");
+      }
+      if (!confirm("导入备份会替换当前 APP 的所有数据，继续吗？")) return;
+      state={
+        tasks:imported.tasks,logs:imported.logs,goals:imported.goals
+      };
+      save(); alert("备份恢复成功。");
+    } catch(err) {
+      alert("无法读取该备份文件，请选择本 APP 导出的 JSON 文件。");
+    } finally {
+      e.target.value="";
+    }
+  });
+  $("resetBtn").addEventListener("click", () => {
+    if (!confirm("确定清空所有任务、日志和目标吗？建议先下载备份。")) return;
+    if (!confirm("再次确认：此操作无法撤销，继续清空吗？")) return;
+    state={tasks:[],logs:[],goals:[]}; save();
+  });
+
+  $("today").textContent = today.toLocaleDateString("zh-CN", {
+    year:"numeric",month:"long",day:"numeric",weekday:"long"
+  });
+  load();
+  render();
+})();
+</script>
+</body>
+</html>
